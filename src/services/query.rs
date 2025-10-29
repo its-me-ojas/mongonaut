@@ -1,5 +1,4 @@
-use mongodb::{Client, Database, bson::Document, results};
-use tokio::fs::File;
+use mongodb::{Client, bson::Document};
 
 use crate::{
     error::AppError,
@@ -24,10 +23,17 @@ impl QueryService {
 
         let mut db_infos = Vec::new();
         for db in databases {
+            let collection_count = self
+                .client
+                .database(&db.name)
+                .list_collection_names()
+                .await
+                .map(|collections| collections.len())
+                .unwrap_or(0);
             let db_info = DatabaseInfo {
                 name: db.name,
                 size_on_disk: db.size_on_disk as u64,
-                collection_count: 0,
+                collection_count,
                 empty: db.empty,
             };
             db_infos.push(db_info);
@@ -97,48 +103,52 @@ impl QueryService {
         }
         Ok(documents)
     }
-    
+
     pub async fn count_documents(
-    &self,
-    db: &str,
-    collection: &str,
-    filter: Option<Document>,
-) -> Result<u64, AppError> {
-    let coll = self.client.database(db).collection::<Document>(collection);
+        &self,
+        db: &str,
+        collection: &str,
+        filter: Option<Document>,
+    ) -> Result<u64, AppError> {
+        let coll = self.client.database(db).collection::<Document>(collection);
 
-    let filter_doc = filter.unwrap_or_else(|| Document::new());
+        let filter_doc = filter.unwrap_or_else(|| Document::new());
 
-    let count = coll
-        .count_documents(filter_doc)
-        .await
-        .map_err(|e| AppError::Query(format!("Failed to count documents: {}", e)))?;
+        let count = coll
+            .count_documents(filter_doc)
+            .await
+            .map_err(|e| AppError::Query(format!("Failed to count documents: {}", e)))?;
 
-    Ok(count)
-}
-
-    pub async fn aggregate(
-    &self,
-    db: &str,
-    collection: &str,
-    pipeline: Vec<Document>,
-) -> Result<Vec<Document>, AppError> {
-    let coll = self.client.database(db).collection::<Document>(collection);
-
-    let mut cursor = coll
-        .aggregate(pipeline)
-        .await
-        .map_err(|e| AppError::Query(format!("Aggregation failed: {}", e)))?;
-
-    let mut documents = Vec::new();
-    use futures::stream::StreamExt;
-    while let Some(result) = cursor.next().await {
-        match result {
-            Ok(doc) => documents.push(doc),
-            Err(e) => return Err(AppError::Query(format!("Error reading aggregation result: {}", e))),
-        }
+        Ok(count)
     }
 
-    Ok(documents)
-}
+    pub async fn aggregate(
+        &self,
+        db: &str,
+        collection: &str,
+        pipeline: Vec<Document>,
+    ) -> Result<Vec<Document>, AppError> {
+        let coll = self.client.database(db).collection::<Document>(collection);
 
+        let mut cursor = coll
+            .aggregate(pipeline)
+            .await
+            .map_err(|e| AppError::Query(format!("Aggregation failed: {}", e)))?;
+
+        let mut documents = Vec::new();
+        use futures::stream::StreamExt;
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(doc) => documents.push(doc),
+                Err(e) => {
+                    return Err(AppError::Query(format!(
+                        "Error reading aggregation result: {}",
+                        e
+                    )));
+                }
+            }
+        }
+
+        Ok(documents)
+    }
 }

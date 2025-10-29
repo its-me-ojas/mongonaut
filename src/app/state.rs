@@ -25,6 +25,8 @@ pub struct AppState {
     pub selected_db_index: usize,
     pub selected_coll_index: usize,
     pub current_screen: Screen,
+    pub selected_doc_index: usize,
+    pub doc_scroll_offset: usize,
 }
 
 impl AppState {
@@ -45,6 +47,8 @@ impl AppState {
             selected_db_index: 0,
             selected_coll_index: 0,
             current_screen: Screen::DatabaseList,
+            selected_doc_index: 0,
+            doc_scroll_offset: 0,
         }
     }
 
@@ -124,6 +128,36 @@ impl AppState {
 
     pub fn set_screen(&mut self, screen: Screen) {
         self.current_screen = screen
+    }
+
+    pub fn select_next_doc(&mut self) {
+        if !self.documents.is_empty() {
+            self.selected_doc_index = (self.selected_doc_index + 1) % self.documents.len();
+        }
+    }
+
+    pub fn select_prev_doc(&mut self) {
+        if !self.documents.is_empty() {
+            if self.selected_doc_index == 0 {
+                self.selected_doc_index == self.documents.len() - 1;
+            } else {
+                self.selected_doc_index -= 1;
+            }
+        }
+    }
+
+    pub fn scroll_doc_down(&mut self) {
+        self.doc_scroll_offset += 1;
+    }
+
+    pub fn scroll_doc_up(&mut self) {
+        if self.doc_scroll_offset > 0 {
+            self.doc_scroll_offset -= 1;
+        }
+    }
+
+    pub fn get_selected_document(&self) -> Option<&mongodb::bson::Document> {
+        self.documents.get(self.selected_doc_index)
     }
 }
 

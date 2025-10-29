@@ -68,8 +68,7 @@ fn render_collection_list(f: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn render_footer(f: &mut Frame, area: Rect) {
-    let footer_text =
-        "Press 'q' to quit | ↑/↓ to navigate | Enter to view documents | Backspace to go back";
+    let footer_text = "Press 'q' to quit | ↑/↓ to navigate | Enter to view documents | Backspace to go back | 'r' to refresh";
     let footer = Paragraph::new(footer_text)
         .style(Style::default().fg(Color::Gray))
         .block(Block::default().borders(Borders::ALL));

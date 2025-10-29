@@ -249,14 +249,14 @@
 
 - [ ] 18. Implement document view screen
 
-  - [ ] 18.1 Create document view layout
+  - [x] 18.1 Create document view layout
 
     - Create screen layout with DocumentViewerWidget and filter bar
     - Load initial documents (page 1, 20 documents)
     - Display pagination information (current page, total documents)
     - _Requirements: 3.1, 3.5_
 
-  - [ ] 18.2 Add document navigation and filtering
+  - [x] 18.2 Add document navigation and filtering
 
     - Implement page navigation (next/previous page)
     - Add filter input and apply filter functionality

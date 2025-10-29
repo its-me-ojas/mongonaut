@@ -24,8 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
     // appstate
     let mut state = AppState::new();
+
     // connecting to mongo
     let mut conn_service = ConnectionService::new();
     let uri = "mongodb://localhost:27017";
@@ -52,8 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // main loop of terminal
-    // Main loop
+    // main loop
     loop {
         terminal.draw(|f| match state.current_screen {
             app::screen::Screen::DatabaseList => {
@@ -61,6 +62,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             app::screen::Screen::CollectionList => {
                 ui::collection_list::render(f, f.area(), &state);
+            }
+            app::screen::Screen::DocumentView => {
+                ui::document_view::render(f, f.area(), &state);
             }
         })?;
 
@@ -102,23 +106,144 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 state.set_loading(false);
                             }
                         }
+                        KeyCode::Char('r') => {
+                            // Refresh databases
+                            state.set_loading(true);
+                            if let Some(client) = conn_service.get_client() {
+                                let query_service = QueryService::new(client.clone());
+                                match query_service.list_databases().await {
+                                    Ok(databases) => {
+                                        state.set_databases(databases);
+                                    }
+                                    Err(e) => {
+                                        state.set_error(Some(format!(
+                                            "Failed to refresh databases: {}",
+                                            e
+                                        )));
+                                    }
+                                }
+                            }
+                            state.set_loading(false);
+                        }
 
                         _ => {}
                     }
                 }
-                app::screen::Screen::CollectionList => match key.code {
+                app::screen::Screen::CollectionList => {
+                    match key.code {
+                        KeyCode::Char('q') => {
+                            state.quit();
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            state.select_next_coll();
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            state.select_prev_coll();
+                        }
+                        KeyCode::Enter => {
+                            // Load documents for selected collection
+                            let coll_name = state.get_selected_collection().map(|c| c.name.clone());
+                            let db_name = state.current_database.clone();
+
+                            if let (Some(db_name), Some(coll_name)) = (db_name, coll_name) {
+                                state.set_loading(true);
+                                if let Some(client) = conn_service.get_client() {
+                                    let query_service = QueryService::new(client.clone());
+                                    match query_service
+                                        .find_documents(&db_name, &coll_name, None, 0, 20)
+                                        .await
+                                    {
+                                        Ok(documents) => {
+                                            state.current_collection = Some(coll_name);
+                                            state.set_documents(documents);
+                                            state.set_screen(app::screen::Screen::DocumentView);
+                                        }
+                                        Err(e) => {
+                                            state.set_error(Some(format!(
+                                                "Failed to load documents: {}",
+                                                e
+                                            )));
+                                        }
+                                    }
+                                }
+                                state.set_loading(false);
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            state.set_screen(app::screen::Screen::DatabaseList);
+                        }
+                        KeyCode::Char('r') => {
+                            // Refresh collections
+                            if let Some(db_name) = state.current_database.clone() {
+                                state.set_loading(true);
+                                if let Some(client) = conn_service.get_client() {
+                                    let query_service = QueryService::new(client.clone());
+                                    match query_service.list_collections(&db_name).await {
+                                        Ok(collections) => {
+                                            state.set_collections(collections);
+                                        }
+                                        Err(e) => {
+                                            state.set_error(Some(format!(
+                                                "Failed to refresh collections: {}",
+                                                e
+                                            )));
+                                        }
+                                    }
+                                }
+                                state.set_loading(false);
+                            }
+                        }
+
+                        _ => {}
+                    }
+                }
+                app::screen::Screen::DocumentView => match key.code {
                     KeyCode::Char('q') => {
                         state.quit();
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        state.select_next_coll();
+                        state.select_next_doc();
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
-                        state.select_prev_coll();
+                        state.select_prev_doc();
+                    }
+                    KeyCode::PageDown => {
+                        state.scroll_doc_down();
+                    }
+                    KeyCode::PageUp => {
+                        state.scroll_doc_up();
                     }
                     KeyCode::Backspace => {
-                        state.set_screen(app::screen::Screen::DatabaseList);
+                        state.set_screen(app::screen::Screen::CollectionList);
                     }
+                    KeyCode::Char('r') => {
+                        // Refresh documents
+                        let db_name = state.current_database.clone();
+                        let coll_name = state.current_collection.clone();
+
+                        if let (Some(db_name), Some(coll_name)) = (db_name, coll_name) {
+                            state.set_loading(true);
+                            if let Some(client) = conn_service.get_client() {
+                                let query_service = QueryService::new(client.clone());
+                                match query_service
+                                    .find_documents(&db_name, &coll_name, None, 0, 20)
+                                    .await
+                                {
+                                    Ok(documents) => {
+                                        state.set_documents(documents);
+                                    }
+                                    Err(e) => {
+                                        state.set_error(Some(format!(
+                                            "Failed to refresh documents: {}",
+                                            e
+                                        )));
+                                    }
+                                }
+                            }
+                            state.set_loading(false);
+                        }
+                    }
+
                     _ => {}
                 },
             }

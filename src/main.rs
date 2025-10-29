@@ -262,23 +262,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 app::screen::Screen::DocumentView => {
-                    if state.filter_mode {
-                        // Filter input mode
+                    if state.query_mode {
+                        // Advanced query mode - JSON input
                         match key.code {
                             KeyCode::Char(c) => {
-                                state.push_filter_char(c);
+                                state.push_query_char(c);
                             }
                             KeyCode::Backspace => {
-                                state.pop_filter_char();
+                                state.pop_query_char();
                             }
                             KeyCode::Esc => {
-                                state.exit_filter_mode();
+                                state.exit_query_mode();
+                                state.clear_query();
                             }
                             KeyCode::Enter => {
+                                // Apply the JSON query
                                 match state.apply_filter() {
                                     Ok(_) => {
-                                        state.exit_filter_mode();
-                                        // Reload documents with filter
+                                        state.exit_query_mode();
                                         let db_name = state.current_database.clone();
                                         let coll_name = state.current_collection.clone();
                                         let filter = state.filter.clone();
@@ -298,10 +299,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 {
                                                     Ok(documents) => {
                                                         state.set_documents(documents);
+                                                        state.set_error(None);
                                                     }
                                                     Err(e) => {
                                                         state.set_error(Some(format!(
-                                                            "Failed to apply filter: {}",
+                                                            "Query failed: {}",
                                                             e
                                                         )));
                                                     }
@@ -317,6 +319,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         }
+                    } else if state.filter_mode {
+                        // Simple search mode - live filtering
+                        match key.code {
+                            KeyCode::Char(c) => {
+                                state.push_filter_char(c);
+                                apply_dynamic_filter(&mut state, &conn_service).await;
+                            }
+                            KeyCode::Backspace => {
+                                state.pop_filter_char();
+                                apply_dynamic_filter(&mut state, &conn_service).await;
+                            }
+                            KeyCode::Esc => {
+                                state.exit_filter_mode();
+                                state.clear_filter();
+                                reload_documents_without_filter(&mut state, &conn_service).await;
+                            }
+                            KeyCode::Enter => {
+                                state.exit_filter_mode();
+                            }
+                            _ => {}
+                        }
                     } else {
                         // Normal navigation mode
                         match key.code {
@@ -325,6 +348,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             KeyCode::Char('f') => {
                                 state.enter_filter_mode();
+                            }
+                            KeyCode::Char('/') => {
+                                state.enter_query_mode();
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 state.select_next_doc();
@@ -343,7 +369,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             KeyCode::Esc => {
                                 state.clear_filter();
-                                // Reload without filter
+                                reload_documents_without_filter(&mut state, &conn_service).await;
+                            }
+                            KeyCode::Char('r') => {
                                 let db_name = state.current_database.clone();
                                 let coll_name = state.current_collection.clone();
 
@@ -360,35 +388,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                             Err(e) => {
                                                 state.set_error(Some(format!(
-                                                    "Failed to reload documents: {}",
-                                                    e
-                                                )));
-                                            }
-                                        }
-                                    }
-                                    state.set_loading(false);
-                                }
-                            }
-                            KeyCode::Char('r') => {
-                                // Refresh with current filter
-                                let db_name = state.current_database.clone();
-                                let coll_name = state.current_collection.clone();
-                                let filter = state.filter.clone();
-
-                                if let (Some(db_name), Some(coll_name)) = (db_name, coll_name) {
-                                    state.set_loading(true);
-                                    if let Some(client) = conn_service.get_client() {
-                                        let query_service = QueryService::new(client.clone());
-                                        match query_service
-                                            .find_documents(&db_name, &coll_name, filter, 0, 20)
-                                            .await
-                                        {
-                                            Ok(documents) => {
-                                                state.set_documents(documents);
-                                            }
-                                            Err(e) => {
-                                                state.set_error(Some(format!(
-                                                    "Failed to refresh documents: {}",
+                                                    "Failed to refresh: {}",
                                                     e
                                                 )));
                                             }
@@ -406,6 +406,98 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if state.should_quit {
             break;
+        }
+    }
+
+    // helper function for dynamic filtering
+    async fn apply_dynamic_filter(state: &mut AppState, conn_service: &ConnectionService) {
+        if state.filter_input.is_empty() {
+            reload_documents_without_filter(state, conn_service).await;
+            return;
+        }
+
+        let db_name = state.current_database.clone();
+        let coll_name = state.current_collection.clone();
+
+        if let (Some(db_name), Some(coll_name)) = (db_name, coll_name) {
+            if let Some(client) = conn_service.get_client() {
+                let query_service = QueryService::new(client.clone());
+
+                // Get a sample document to extract field names
+                match query_service
+                    .find_documents(&db_name, &coll_name, None, 0, 1)
+                    .await
+                {
+                    Ok(sample_docs) => {
+                        if let Some(sample_doc) = sample_docs.first() {
+                            // Build $or array with regex for each field
+                            let mut or_conditions = Vec::new();
+
+                            for (key, _) in sample_doc.iter() {
+                                if key != "_id" {
+                                    or_conditions.push(mongodb::bson::doc! {
+                                        key: {"$regex": &state.filter_input, "$options": "i"}
+                                    });
+                                }
+                            }
+
+                            if or_conditions.is_empty() {
+                                reload_documents_without_filter(state, conn_service).await;
+                                return;
+                            }
+
+                            let filter = mongodb::bson::doc! {
+                                "$or": or_conditions
+                            };
+
+                            match query_service
+                                .find_documents(&db_name, &coll_name, Some(filter), 0, 20)
+                                .await
+                            {
+                                Ok(documents) => {
+                                    state.set_documents(documents);
+                                    state.set_error(None);
+                                }
+                                Err(e) => {
+                                    state.set_error(Some(format!("Search error: {}", e)));
+                                }
+                            }
+                        } else {
+                            state.set_documents(Vec::new());
+                        }
+                    }
+                    Err(e) => {
+                        state.set_error(Some(format!("Failed to analyze fields: {}", e)));
+                    }
+                }
+            }
+        }
+    }
+
+    // helper function to reload without filter
+    async fn reload_documents_without_filter(
+        state: &mut AppState,
+        conn_service: &ConnectionService,
+    ) {
+        let db_name = state.current_database.clone();
+        let coll_name = state.current_collection.clone();
+
+        if let (Some(db_name), Some(coll_name)) = (db_name, coll_name) {
+            if let Some(client) = conn_service.get_client() {
+                let query_service = QueryService::new(client.clone());
+                match query_service
+                    .find_documents(&db_name, &coll_name, None, 0, 20)
+                    .await
+                {
+                    Ok(documents) => {
+                        state.set_documents(documents);
+                        state.set_error(None);
+                    }
+                    Err(e) => {
+                        state.set_error(Some(format!("Failed to reload: {}", e)));
+                    }
+                }
+            }
         }
     }
 

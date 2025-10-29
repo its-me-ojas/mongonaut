@@ -51,24 +51,30 @@ fn render_header(f: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn render_filter_input(f: &mut Frame, area: Rect, state: &AppState) {
-    let style = if state.filter_mode {
-        Style::default().fg(Color::Yellow)
+    let (style, title, text) = if state.query_mode {
+        (
+            Style::default().fg(Color::Magenta),
+            "Advanced Query Mode (JSON - Enter to apply, Esc to cancel)",
+            state.query_input.as_str(),
+        )
+    } else if state.filter_mode {
+        (
+            Style::default().fg(Color::Yellow),
+            "Search Mode (type to filter, Esc to clear)",
+            state.filter_input.as_str(),
+        )
+    } else if state.filter.is_some() {
+        (
+            Style::default().fg(Color::Green),
+            "Active Filter (press 'f' to search, '/' for query, Esc to clear)",
+            "", // Just use empty string for now
+        )
     } else {
-        Style::default().fg(Color::White)
-    };
-
-    let title = if state.filter.is_some() {
-        "Filter (Active - press 'f' to edit, Esc to clear)"
-    } else {
-        "Filter (press 'f' to add filter)"
-    };
-
-    let text = if state.filter_mode {
-        &state.filter_input
-    } else if let Some(filter) = &state.filter {
-        &format!("{}", filter)
-    } else {
-        "No filter"
+        (
+            Style::default().fg(Color::White),
+            "No filter (press 'f' to search, '/' for advanced query)",
+            "",
+        )
     };
 
     let filter_widget = Paragraph::new(text)

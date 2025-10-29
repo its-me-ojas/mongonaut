@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 
-use crate::app::state::{self, AppState};
+use crate::app::state::AppState;
 
 pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::default()

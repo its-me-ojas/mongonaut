@@ -33,6 +33,8 @@ pub struct AppState {
     pub input_mode: bool,
     pub filter_input: String,
     pub filter_mode: bool,
+    pub query_mode: bool,
+    pub query_input: String,
 }
 
 impl AppState {
@@ -59,6 +61,8 @@ impl AppState {
             input_mode: false,
             filter_input: String::new(),
             filter_mode: false,
+            query_input: String::new(),
+            query_mode: false,
         }
     }
 
@@ -212,25 +216,55 @@ impl AppState {
     }
 
     pub fn apply_filter(&mut self) -> Result<(), String> {
-        if self.filter_input.is_empty() {
+        let input = if !self.query_input.is_empty() {
+            &self.query_input
+        } else {
+            &self.filter_input
+        };
+
+        if input.is_empty() {
             self.filter = None;
             return Ok(());
         }
 
-        // try to parse as JSON
-        match serde_json::from_str::<serde_json::Value>(&self.filter_input) {
-            Ok(json_value) => {
-                // Convert to BSON Document
-                match mongodb::bson::to_document(&json_value) {
-                    Ok(doc) => {
-                        self.filter = Some(doc);
-                        Ok(())
-                    }
-                    Err(e) => Err(format!("Invalid filter: {}", e)),
+        match serde_json::from_str::<serde_json::Value>(input) {
+            Ok(json_value) => match mongodb::bson::to_document(&json_value) {
+                Ok(doc) => {
+                    self.filter = Some(doc);
+                    Ok(())
                 }
-            }
+                Err(e) => Err(format!("Invalid filter: {}", e)),
+            },
             Err(e) => Err(format!("Invalid JSON: {}", e)),
         }
+    }
+
+    pub fn enter_query_mode(&mut self) {
+        self.query_mode = true;
+    }
+
+    pub fn exit_query_mode(&mut self) {
+        self.query_mode = false;
+    }
+
+    pub fn push_every_char(&mut self, c: char) {
+        self.query_input.push(c);
+    }
+
+    pub fn pop_every_char(&mut self) {
+        self.query_input.pop();
+    }
+
+    pub fn clear_query(&mut self) {
+        self.query_input.clear();
+    }
+
+    pub fn push_query_char(&mut self, c: char) {
+        self.query_input.push(c);
+    }
+
+    pub fn pop_query_char(&mut self) {
+        self.query_input.pop();
     }
 }
 

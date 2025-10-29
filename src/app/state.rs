@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use super::screen::Screen;
 use crate::models::{CollectionInfo, DatabaseInfo, ServerInfo};
 use mongodb::bson::Document;
@@ -29,6 +31,8 @@ pub struct AppState {
     pub doc_scroll_offset: usize,
     pub connection_input: String,
     pub input_mode: bool,
+    pub filter_input: String,
+    pub filter_mode: bool,
 }
 
 impl AppState {
@@ -53,6 +57,8 @@ impl AppState {
             doc_scroll_offset: 0,
             connection_input: String::from("mongodb://localhost:27017"),
             input_mode: false,
+            filter_input: String::new(),
+            filter_mode: false,
         }
     }
 
@@ -182,6 +188,49 @@ impl AppState {
 
     pub fn pop_char(&mut self) {
         self.connection_input.pop();
+    }
+
+    pub fn enter_filter_mode(&mut self) {
+        self.filter_mode = true;
+    }
+
+    pub fn exit_filter_mode(&mut self) {
+        self.filter_mode = false;
+    }
+
+    pub fn clear_filter(&mut self) {
+        self.filter_input.clear();
+        self.filter = None;
+    }
+
+    pub fn push_filter_char(&mut self, c: char) {
+        self.filter_input.push(c);
+    }
+
+    pub fn pop_filter_char(&mut self) {
+        self.filter_input.pop();
+    }
+
+    pub fn apply_filter(&mut self) -> Result<(), String> {
+        if self.filter_input.is_empty() {
+            self.filter = None;
+            return Ok(());
+        }
+
+        // try to parse as JSON
+        match serde_json::from_str::<serde_json::Value>(&self.filter_input) {
+            Ok(json_value) => {
+                // Convert to BSON Document
+                match mongodb::bson::to_document(&json_value) {
+                    Ok(doc) => {
+                        self.filter = Some(doc);
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Invalid filter: {}", e)),
+                }
+            }
+            Err(e) => Err(format!("Invalid JSON: {}", e)),
+        }
     }
 }
 

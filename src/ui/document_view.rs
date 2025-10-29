@@ -18,14 +18,16 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
+            Constraint::Length(3), // filter input
             Constraint::Min(0),
             Constraint::Length(3),
         ])
         .split(chunks[0]);
 
     render_header(f, left_chunks[0], state);
-    render_document_list(f, left_chunks[1], state);
-    render_footer(f, left_chunks[2]);
+    render_filter_input(f, left_chunks[1], state);
+    render_document_list(f, left_chunks[2], state);
+    render_footer(f, left_chunks[3]);
     render_document_content(f, chunks[1], state);
 }
 
@@ -46,6 +48,34 @@ fn render_header(f: &mut Frame, area: Rect, state: &AppState) {
         .block(Block::default().borders(Borders::ALL));
 
     f.render_widget(header, area);
+}
+
+fn render_filter_input(f: &mut Frame, area: Rect, state: &AppState) {
+    let style = if state.filter_mode {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let title = if state.filter.is_some() {
+        "Filter (Active - press 'f' to edit, Esc to clear)"
+    } else {
+        "Filter (press 'f' to add filter)"
+    };
+
+    let text = if state.filter_mode {
+        &state.filter_input
+    } else if let Some(filter) = &state.filter {
+        &format!("{}", filter)
+    } else {
+        "No filter"
+    };
+
+    let filter_widget = Paragraph::new(text)
+        .style(style)
+        .block(Block::default().borders(Borders::ALL).title(title));
+
+    f.render_widget(filter_widget, area);
 }
 
 fn render_document_list(f: &mut Frame, area: Rect, state: &AppState) {
@@ -121,8 +151,7 @@ fn render_document_content(f: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn render_footer(f: &mut Frame, area: Rect) {
-    let footer_text =
-        "q: quit | ↑/↓: navigate | Backspace: back | PgUp/PgDn: scroll | 'r': refresh";
+    let footer_text = "q: quit | ↑/↓: navigate | Backspace: back | PgUp/PgDn: scroll | 'f': filter | 'r': refresh";
     let footer = Paragraph::new(footer_text)
         .style(Style::default().fg(Color::Gray))
         .block(Block::default().borders(Borders::ALL));

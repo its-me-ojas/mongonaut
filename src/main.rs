@@ -4,6 +4,7 @@ mod models;
 mod services;
 mod ui;
 
+use arboard::Clipboard;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
@@ -11,7 +12,6 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
-use arboard::Clipboard;
 
 use app::state::AppState;
 use services::connection::ConnectionService;
@@ -261,55 +261,146 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         _ => {}
                     }
                 }
-                app::screen::Screen::DocumentView => match key.code {
-                    KeyCode::Char('q') => {
-                        state.quit();
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        state.select_next_doc();
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        state.select_prev_doc();
-                    }
-                    KeyCode::PageDown => {
-                        state.scroll_doc_down();
-                    }
-                    KeyCode::PageUp => {
-                        state.scroll_doc_up();
-                    }
-                    KeyCode::Backspace => {
-                        state.set_screen(app::screen::Screen::CollectionList);
-                    }
-                    KeyCode::Char('r') => {
-                        // Refresh documents
-                        let db_name = state.current_database.clone();
-                        let coll_name = state.current_collection.clone();
+                app::screen::Screen::DocumentView => {
+                    if state.filter_mode {
+                        // Filter input mode
+                        match key.code {
+                            KeyCode::Char(c) => {
+                                state.push_filter_char(c);
+                            }
+                            KeyCode::Backspace => {
+                                state.pop_filter_char();
+                            }
+                            KeyCode::Esc => {
+                                state.exit_filter_mode();
+                            }
+                            KeyCode::Enter => {
+                                match state.apply_filter() {
+                                    Ok(_) => {
+                                        state.exit_filter_mode();
+                                        // Reload documents with filter
+                                        let db_name = state.current_database.clone();
+                                        let coll_name = state.current_collection.clone();
+                                        let filter = state.filter.clone();
 
-                        if let (Some(db_name), Some(coll_name)) = (db_name, coll_name) {
-                            state.set_loading(true);
-                            if let Some(client) = conn_service.get_client() {
-                                let query_service = QueryService::new(client.clone());
-                                match query_service
-                                    .find_documents(&db_name, &coll_name, None, 0, 20)
-                                    .await
-                                {
-                                    Ok(documents) => {
-                                        state.set_documents(documents);
+                                        if let (Some(db_name), Some(coll_name)) =
+                                            (db_name, coll_name)
+                                        {
+                                            state.set_loading(true);
+                                            if let Some(client) = conn_service.get_client() {
+                                                let query_service =
+                                                    QueryService::new(client.clone());
+                                                match query_service
+                                                    .find_documents(
+                                                        &db_name, &coll_name, filter, 0, 20,
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(documents) => {
+                                                        state.set_documents(documents);
+                                                    }
+                                                    Err(e) => {
+                                                        state.set_error(Some(format!(
+                                                            "Failed to apply filter: {}",
+                                                            e
+                                                        )));
+                                                    }
+                                                }
+                                            }
+                                            state.set_loading(false);
+                                        }
                                     }
                                     Err(e) => {
-                                        state.set_error(Some(format!(
-                                            "Failed to refresh documents: {}",
-                                            e
-                                        )));
+                                        state.set_error(Some(e));
                                     }
                                 }
                             }
-                            state.set_loading(false);
+                            _ => {}
+                        }
+                    } else {
+                        // Normal navigation mode
+                        match key.code {
+                            KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                state.quit();
+                            }
+                            KeyCode::Char('f') => {
+                                state.enter_filter_mode();
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                state.select_next_doc();
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                state.select_prev_doc();
+                            }
+                            KeyCode::PageDown => {
+                                state.scroll_doc_down();
+                            }
+                            KeyCode::PageUp => {
+                                state.scroll_doc_up();
+                            }
+                            KeyCode::Backspace => {
+                                state.set_screen(app::screen::Screen::CollectionList);
+                            }
+                            KeyCode::Esc => {
+                                state.clear_filter();
+                                // Reload without filter
+                                let db_name = state.current_database.clone();
+                                let coll_name = state.current_collection.clone();
+
+                                if let (Some(db_name), Some(coll_name)) = (db_name, coll_name) {
+                                    state.set_loading(true);
+                                    if let Some(client) = conn_service.get_client() {
+                                        let query_service = QueryService::new(client.clone());
+                                        match query_service
+                                            .find_documents(&db_name, &coll_name, None, 0, 20)
+                                            .await
+                                        {
+                                            Ok(documents) => {
+                                                state.set_documents(documents);
+                                            }
+                                            Err(e) => {
+                                                state.set_error(Some(format!(
+                                                    "Failed to reload documents: {}",
+                                                    e
+                                                )));
+                                            }
+                                        }
+                                    }
+                                    state.set_loading(false);
+                                }
+                            }
+                            KeyCode::Char('r') => {
+                                // Refresh with current filter
+                                let db_name = state.current_database.clone();
+                                let coll_name = state.current_collection.clone();
+                                let filter = state.filter.clone();
+
+                                if let (Some(db_name), Some(coll_name)) = (db_name, coll_name) {
+                                    state.set_loading(true);
+                                    if let Some(client) = conn_service.get_client() {
+                                        let query_service = QueryService::new(client.clone());
+                                        match query_service
+                                            .find_documents(&db_name, &coll_name, filter, 0, 20)
+                                            .await
+                                        {
+                                            Ok(documents) => {
+                                                state.set_documents(documents);
+                                            }
+                                            Err(e) => {
+                                                state.set_error(Some(format!(
+                                                    "Failed to refresh documents: {}",
+                                                    e
+                                                )));
+                                            }
+                                        }
+                                    }
+                                    state.set_loading(false);
+                                }
+                            }
+                            _ => {}
                         }
                     }
-
-                    _ => {}
-                },
+                }
             }
         }
 

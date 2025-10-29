@@ -2,7 +2,8 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Paragraph},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 
 use crate::app::state::AppState;
@@ -22,7 +23,41 @@ pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
     render_title(f, chunks[0]);
     render_instructions(f, chunks[1]);
     render_input(f, chunks[2], state);
+
+    if state.show_history && !state.connection_history.is_empty() {
+        render_history(f, chunks[3], state);
+    }
+
     render_footer(f, chunks[4], state);
+}
+
+fn render_history(f: &mut Frame, area: Rect, state: &AppState) {
+    let items: Vec<ListItem> = state
+        .connection_history
+        .iter()
+        .enumerate()
+        .map(|(i, uri)| {
+            let style = if i == state.selected_history_index {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+                    .bg(Color::DarkGray)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            ListItem::new(Line::from(Span::styled(uri.clone(), style)))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Connection History (↑/↓ to select, Enter to use)"),
+        )
+        .style(Style::default().fg(Color::White));
+
+    f.render_widget(list, area);
 }
 
 fn render_title(f: &mut Frame, area: Rect) {
@@ -70,11 +105,15 @@ fn render_footer(f: &mut Frame, area: Rect, state: &AppState) {
         )
     } else if state.loading {
         "Connecting...".to_string()
+    } else if state.show_history {
+        "↑/↓: Navigate | Enter: Select | Tab: Hide history | Ctrl+C: Quit".to_string()
     } else {
-        "Enter: Connect | Ctrl+V: Paste | Esc: Clear | Ctrl+C/Ctrl+Q: Quit".to_string()
+        "Enter: Connect | Ctrl+V: Paste | Tab: Show history | Esc: Clear | Ctrl+C/Ctrl+Q: Quit"
+            .to_string()
     };
     let footer = Paragraph::new(text)
         .style(Style::default().fg(Color::Gray))
         .block(Block::default().borders(Borders::ALL));
+
     f.render_widget(footer, area);
 }

@@ -35,6 +35,9 @@ pub struct AppState {
     pub filter_mode: bool,
     pub query_mode: bool,
     pub query_input: String,
+    pub connection_history: Vec<String>,
+    pub selected_history_index: usize,
+    pub show_history: bool,
 }
 
 impl AppState {
@@ -63,6 +66,9 @@ impl AppState {
             filter_mode: false,
             query_input: String::new(),
             query_mode: false,
+            connection_history: Vec::new(),
+            selected_history_index: 0,
+            show_history: false,
         }
     }
 
@@ -265,6 +271,36 @@ impl AppState {
 
     pub fn pop_query_char(&mut self) {
         self.query_input.pop();
+    }
+
+    pub fn set_connection_history(&mut self, history: Vec<String>) {
+        self.connection_history = history;
+    }
+
+    pub fn toggle_history(&mut self) {
+        self.show_history = !self.show_history;
+    }
+
+    pub fn select_next_history(&mut self) {
+        if !self.connection_history.is_empty() {
+            self.selected_history_index =
+                (self.selected_history_index + 1) % self.connection_history.len();
+        }
+    }
+    pub fn select_prev_history(&mut self) {
+        if !self.connection_history.is_empty() {
+            if self.selected_history_index == 0 {
+                self.selected_history_index = self.connection_history.len() - 1;
+            } else {
+                self.selected_history_index -= 1;
+            }
+        }
+    }
+
+    pub fn get_selected_history_uri(&self) -> Option<String> {
+        self.connection_history
+            .get(self.selected_history_index)
+            .cloned()
     }
 }
 

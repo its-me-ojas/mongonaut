@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod error;
 mod models;
 mod services;
@@ -17,6 +18,8 @@ use app::state::AppState;
 use services::connection::ConnectionService;
 use services::query::QueryService;
 
+use crate::config::ConnectionHistory;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // setup terminal
@@ -28,6 +31,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // appstate
     let mut state = AppState::new();
+    let mut conn_service = ConnectionService::new();
+    let mut history = ConnectionHistory::load();
+    state.set_connection_history(history.uris.clone());
 
     // connecting to mongo
     let mut conn_service = ConnectionService::new();
@@ -74,66 +80,104 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if let Event::Key(key) = event::read()? {
             match state.current_screen {
-                app::screen::Screen::Connection => match key.code {
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        state.quit();
-                    }
-                    KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        state.quit();
-                    }
-                    KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        // pasting from clipboard
-                        if let Ok(mut clipboard) = Clipboard::new() {
-                            if let Ok(text) = clipboard.get_text() {
-                                for c in text.chars() {
-                                    state.push_char(c);
+                app::screen::Screen::Connection => {
+                    if state.show_history {
+                        match key.code {
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                state.quit();
+                            }
+                            KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                state.quit();
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                state.select_prev_history();
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                state.select_next_history();
+                            }
+                            KeyCode::Enter => {
+                                if let Some(uri) = state.get_selected_history_uri() {
+                                    state.connection_input = uri.clone();
+                                    state.toggle_history();
                                 }
                             }
+                            KeyCode::Tab => {
+                                state.toggle_history();
+                            }
+                            _ => {}
                         }
-                    }
-                    KeyCode::Char(c) => {
-                        state.push_char(c);
-                    }
-                    KeyCode::Backspace => {
-                        state.pop_char();
-                    }
-                    KeyCode::Esc => {
-                        state.clear_input();
-                        state.set_error(None);
-                    }
-                    KeyCode::Enter => {
-                        let uri = state.connection_input.clone();
-                        state.set_loading(true);
-                        state.set_error(None);
-
-                        match conn_service.connect(&uri).await {
-                            Ok(server_info) => {
-                                state.set_connection(uri, server_info);
-
-                                if let Some(client) = conn_service.get_client() {
-                                    let query_service = QueryService::new(client.clone());
-                                    match query_service.list_databases().await {
-                                        Ok(databases) => {
-                                            state.set_databases(databases);
-                                            state.set_screen(app::screen::Screen::DatabaseList);
-                                        }
-                                        Err(e) => {
-                                            state.set_error(Some(format!(
-                                                "Failed to load databases: {}",
-                                                e
-                                            )));
+                    } else {
+                        match key.code {
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                state.quit();
+                            }
+                            KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                state.quit();
+                            }
+                            KeyCode::Tab => {
+                                state.toggle_history();
+                            }
+                            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                if let Ok(mut clipboard) = Clipboard::new() {
+                                    if let Ok(text) = clipboard.get_text() {
+                                        for c in text.chars() {
+                                            state.push_char(c);
                                         }
                                     }
                                 }
                             }
-                            Err(e) => {
-                                state.set_error(Some(format!("Connection failed: {}", e)));
+                            KeyCode::Char(c) => {
+                                state.push_char(c);
                             }
+                            KeyCode::Backspace => {
+                                state.pop_char();
+                            }
+                            KeyCode::Esc => {
+                                state.clear_input();
+                                state.set_error(None);
+                            }
+                            KeyCode::Enter => {
+                                let uri = state.connection_input.clone();
+                                state.set_loading(true);
+                                state.set_error(None);
+
+                                match conn_service.connect(&uri).await {
+                                    Ok(server_info) => {
+                                        // Save to history
+                                        history.add_uri(uri.clone());
+                                        let _ = history.save();
+                                        state.set_connection_history(history.uris.clone());
+
+                                        state.set_connection(uri, server_info);
+
+                                        if let Some(client) = conn_service.get_client() {
+                                            let query_service = QueryService::new(client.clone());
+                                            match query_service.list_databases().await {
+                                                Ok(databases) => {
+                                                    state.set_databases(databases);
+                                                    state.set_screen(
+                                                        app::screen::Screen::DatabaseList,
+                                                    );
+                                                }
+                                                Err(e) => {
+                                                    state.set_error(Some(format!(
+                                                        "Failed to load databases: {}",
+                                                        e
+                                                    )));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        state.set_error(Some(format!("Connection failed: {}", e)));
+                                    }
+                                }
+                                state.set_loading(false);
+                            }
+                            _ => {}
                         }
-                        state.set_loading(false);
                     }
-                    _ => {}
-                },
+                }
                 app::screen::Screen::DatabaseList => {
                     match key.code {
                         KeyCode::Char('q') => {

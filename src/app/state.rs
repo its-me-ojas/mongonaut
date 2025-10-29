@@ -27,6 +27,8 @@ pub struct AppState {
     pub current_screen: Screen,
     pub selected_doc_index: usize,
     pub doc_scroll_offset: usize,
+    pub connection_input: String,
+    pub input_mode: bool,
 }
 
 impl AppState {
@@ -46,9 +48,11 @@ impl AppState {
             should_quit: false,
             selected_db_index: 0,
             selected_coll_index: 0,
-            current_screen: Screen::DatabaseList,
+            current_screen: Screen::Connection,
             selected_doc_index: 0,
             doc_scroll_offset: 0,
+            connection_input: String::from("mongodb://localhost:27017"),
+            input_mode: false,
         }
     }
 
@@ -158,6 +162,26 @@ impl AppState {
 
     pub fn get_selected_document(&self) -> Option<&mongodb::bson::Document> {
         self.documents.get(self.selected_doc_index)
+    }
+
+    pub fn enter_input_mode(&mut self) {
+        self.input_mode = true;
+    }
+
+    pub fn exit_input_mode(&mut self) {
+        self.input_mode = false;
+    }
+
+    pub fn clear_input(&mut self) {
+        self.connection_input.clear();
+    }
+
+    pub fn push_char(&mut self, c: char) {
+        self.connection_input.push(c);
+    }
+
+    pub fn pop_char(&mut self) {
+        self.connection_input.pop();
     }
 }
 

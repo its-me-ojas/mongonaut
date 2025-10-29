@@ -3,4 +3,5 @@ pub enum Screen{
     DatabaseList,
     CollectionList,
     DocumentView,
+    Connection,
 }

@@ -1,0 +1,390 @@
+name: Build and Package
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-ubuntu:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set timestamp
+        id: timestamp
+        run: echo "timestamp=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: x86_64-unknown-linux-gnu
+
+      - name: Cache cargo registry and git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: ubuntu-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ubuntu-cargo-build-
+
+      - name: Cache cargo install binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/
+          key: cargo-bin-deb-${{ hashFiles('~/.cargo/bin/cargo-deb') }}
+          restore-keys: |
+            cargo-bin-deb-
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev libssl-dev pkg-config
+
+      - name: Build Rust project
+        run: |
+          cargo build --release --locked --target x86_64-unknown-linux-gnu --manifest-path app/Cargo.toml
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
+
+      - name: Package Debian (.deb)
+        run: |
+          cargo install cargo-deb --force
+          cargo deb --target x86_64-unknown-linux-gnu --manifest-path app/Cargo.toml
+          mkdir -p artifacts
+          mv app/target/x86_64-unknown-linux-gnu/debian/*.deb artifacts/
+        env:
+          DEB_BUILD_OPTIONS: nocheck
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kompass-ubuntu-deb-${{ steps.timestamp.outputs.timestamp }}
+          path: artifacts/*
+
+  build-ubuntu-musl:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set timestamp
+        id: timestamp
+        run: echo "timestamp=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: x86_64-unknown-linux-musl
+
+      - name: Cache cargo registry and git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: ubuntu-musl-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ubuntu-musl-cargo-build-
+
+      - name: Cache cargo install binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/
+          key: cargo-bin-musl
+          restore-keys: |
+            cargo-bin-musl
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools pkg-config
+
+      - name: Build Rust project (musl)
+        run: |
+          cargo build --release --locked --target x86_64-unknown-linux-musl --manifest-path app/Cargo.toml
+          mkdir -p artifacts
+          cp app/target/x86_64-unknown-linux-musl/release/kompass artifacts/kompass-x86_64-unknown-linux-musl
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kompass-linux-musl-${{ steps.timestamp.outputs.timestamp }}
+          path: artifacts/*
+
+  build-fedora:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    container:
+      image: fedora:latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set timestamp
+        id: timestamp
+        run: echo "timestamp=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Install Rust toolchain
+        run: |
+          dnf install -y curl gcc openssl-devel pkg-config rpm-build
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          source $HOME/.cargo/env
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Build Rust project
+        run: |
+          source $HOME/.cargo/env
+          cargo build --release --locked --target x86_64-unknown-linux-gnu --manifest-path app/Cargo.toml
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
+
+      - name: Package RPM
+        run: |
+          source $HOME/.cargo/env
+          cargo install cargo-generate-rpm --force
+          cargo generate-rpm --target x86_64-unknown-linux-gnu --manifest-path app/Cargo.toml
+          mkdir -p artifacts
+          find app/target -name "*.rpm" -exec cp {} artifacts/ \;
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kompass-fedora-rpm-${{ steps.timestamp.outputs.timestamp }}
+          path: artifacts/*
+
+  build-archlinux:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set timestamp
+        id: timestamp
+        run: echo "timestamp=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --needed --noconfirm base-devel openssl pkg-config zstd rust git
+
+      - name: Build Rust project
+        run: |
+          cargo build --release --locked --target x86_64-unknown-linux-gnu --manifest-path app/Cargo.toml
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
+
+      - name: Package Arch Linux (.tar.zst)
+        run: |
+          cd app
+          # Create a basic PKGBUILD
+          echo "pkgname='kompass'" > PKGBUILD
+          echo "pkgver=0.1.0" >> PKGBUILD
+          echo "pkgrel=1" >> PKGBUILD
+          echo "pkgdesc='A Rust-based Command Line Interface (CLI) tool for effortlessly navigating, querying, and interacting with MongoDB databases.'" >> PKGBUILD
+          echo "arch=('x86_64')" >> PKGBUILD
+          echo "license=('MIT')" >> PKGBUILD
+          echo "depends=()" >> PKGBUILD
+          echo "makedepends=('rust')" >> PKGBUILD
+          echo "source=()" >> PKGBUILD
+          echo "sha256sums=()" >> PKGBUILD
+          echo "" >> PKGBUILD
+          echo "package() {" >> PKGBUILD
+          echo "  install -Dm755 \"target/x86_64-unknown-linux-gnu/release/kompass\" \"\$pkgdir/usr/bin/kompass\"" >> PKGBUILD
+          echo "}" >> PKGBUILD
+
+          makepkg --nocheck --skipinteg
+          mkdir -p artifacts
+          mv *.zst artifacts/
+          cd ..
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kompass-archlinux-${{ steps.timestamp.outputs.timestamp }}
+          path: artifacts/*
+
+  build-windows:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set timestamp
+        id: timestamp
+        run: echo "timestamp=$(Get-Date -Format 'yyyyMMdd-HHmmss')" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry and git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: windows-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-build-
+
+      - name: Cache cargo install binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/
+          key: cargo-bin-wix
+          restore-keys: |
+            cargo-bin-wix
+
+      - name: Install dependencies
+        run: |
+          choco install wixtoolset -y
+          choco install openssl -y
+
+      - name: Build Rust project
+        run: |
+          cargo build --release --locked --target x86_64-pc-windows-msvc --manifest-path app/Cargo.toml
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
+
+      - name: Package Windows (.msi)
+        run: |
+          cargo install cargo-wix --force
+          cd app
+          cargo wix init
+          cargo wix --target x86_64-pc-windows-msvc
+          cd ..
+          mkdir -p artifacts
+          mv app/target/wix/*.msi artifacts/
+        shell: bash
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kompass-windows-msi-${{ steps.timestamp.outputs.timestamp }}
+          path: artifacts/*
+
+  build-macos:
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set timestamp
+        id: timestamp
+        run: echo "timestamp=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: aarch64-apple-darwin
+
+      - name: Cache cargo registry and git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target/
+          key: macos-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macos-cargo-build-
+
+      - name: Cache cargo install binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/
+          key: cargo-bin-macos
+          restore-keys: |
+            cargo-bin-macos
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install openssl@3 pkg-config llvm
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=$(brew --prefix openssl@3)/lib" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$(brew --prefix openssl@3)/include" >> $GITHUB_ENV
+          echo "MACOSX_DEPLOYMENT_TARGET=11.0" >> $GITHUB_ENV
+          echo "CC=$(brew --prefix llvm)/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$(brew --prefix llvm)/bin/clang++" >> $GITHUB_ENV
+
+      - name: Build Rust project
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin --manifest-path app/Cargo.toml
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
+          OPENSSL_DIR: ${{ env.OPENSSL_DIR }}
+          OPENSSL_LIB_DIR: ${{ env.OPENSSL_LIB_DIR }}
+          OPENSSL_INCLUDE_DIR: ${{ env.OPENSSL_INCLUDE_DIR }}
+
+      - name: Package macOS (.pkg)
+        run: |
+          mkdir -p ~/kompass-installer/usr/local/bin
+          mkdir -p artifacts
+          cp app/target/aarch64-apple-darwin/release/kompass ~/kompass-installer/usr/local/bin/
+          pkgbuild --identifier com.mongonaut.kompass --version 0.1.0 --install-location / --root ~/kompass-installer artifacts/kompass.pkg
+        env:
+          BUNDLE_ID: com.mongonaut.kompass
+          BUNDLE_NAME: kompass
+          MACOSX_DEPLOYMENT_TARGET: 11.0
+          OPENSSL_DIR: ${{ env.OPENSSL_DIR }}
+          OPENSSL_LIB_DIR: ${{ env.OPENSSL_LIB_DIR }}
+          OPENSSL_INCLUDE_DIR: ${{ env.OPENSSL_INCLUDE_DIR }}
+          CC: ${{ env.CC }}
+          CXX: ${{ env.CXX }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kompass-macos-pkg-${{ steps.timestamp.outputs.timestamp }}
+          path: artifacts/*

@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 config = "0.15.18"
 crossterm = "0.29.0"
+futures = "0.3.31"
 mongodb = "3.3.0"
 ratatui = "0.29.0"
 serde = { version = "1.0.228", features = ["derive"] }

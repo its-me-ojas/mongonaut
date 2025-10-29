@@ -56,16 +56,16 @@ jobs:
 
       - name: Build Rust project
         run: |
-          cargo build --release --locked --target x86_64-unknown-linux-gnu --manifest-path app/Cargo.toml
+          cargo build --release --locked --target x86_64-unknown-linux-gnu
         env:
           PKG_CONFIG_ALLOW_CROSS: 1
 
       - name: Package Debian (.deb)
         run: |
           cargo install cargo-deb --force
-          cargo deb --target x86_64-unknown-linux-gnu --manifest-path app/Cargo.toml
+          cargo deb --target x86_64-unknown-linux-gnu
           mkdir -p artifacts
-          mv app/target/x86_64-unknown-linux-gnu/debian/*.deb artifacts/
+          mv  target/x86_64-unknown-linux-gnu/debian/*.deb artifacts/
         env:
           DEB_BUILD_OPTIONS: nocheck
 
@@ -125,9 +125,9 @@ jobs:
 
       - name: Build Rust project (musl)
         run: |
-          cargo build --release --locked --target x86_64-unknown-linux-musl --manifest-path app/Cargo.toml
+          cargo build --release --locked --target x86_64-unknown-linux-musl
           mkdir -p artifacts
-          cp app/target/x86_64-unknown-linux-musl/release/kompass artifacts/kompass-x86_64-unknown-linux-musl
+          cp  target/x86_64-unknown-linux-musl/release/kompass artifacts/kompass-x86_64-unknown-linux-musl
         env:
           PKG_CONFIG_ALLOW_CROSS: 1
 
@@ -160,7 +160,7 @@ jobs:
       - name: Build Rust project
         run: |
           source $HOME/.cargo/env
-          cargo build --release --locked --target x86_64-unknown-linux-gnu --manifest-path app/Cargo.toml
+          cargo build --release --locked --target x86_64-unknown-linux-gnu
         env:
           PKG_CONFIG_ALLOW_CROSS: 1
 
@@ -168,9 +168,9 @@ jobs:
         run: |
           source $HOME/.cargo/env
           cargo install cargo-generate-rpm --force
-          cargo generate-rpm --target x86_64-unknown-linux-gnu --manifest-path app/Cargo.toml
+          cargo generate-rpm --target x86_64-unknown-linux-gnu
           mkdir -p artifacts
-          find app/target -name "*.rpm" -exec cp {} artifacts/ \;
+          find  target -name "*.rpm" -exec cp {} artifacts/ \;
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -198,7 +198,7 @@ jobs:
 
       - name: Build Rust project
         run: |
-          cargo build --release --locked --target x86_64-unknown-linux-gnu --manifest-path app/Cargo.toml
+          cargo build --release --locked --target x86_64-unknown-linux-gnu
         env:
           PKG_CONFIG_ALLOW_CROSS: 1
 
@@ -283,7 +283,7 @@ jobs:
 
       - name: Build Rust project
         run: |
-          cargo build --release --locked --target x86_64-pc-windows-msvc --manifest-path app/Cargo.toml
+          cargo build --release --locked --target x86_64-pc-windows-msvc
         env:
           PKG_CONFIG_ALLOW_CROSS: 1
 
@@ -295,7 +295,7 @@ jobs:
           cargo wix --target x86_64-pc-windows-msvc
           cd ..
           mkdir -p artifacts
-          mv app/target/wix/*.msi artifacts/
+          mv  target/wix/*.msi artifacts/
         shell: bash
 
       - name: Upload Artifacts
@@ -360,7 +360,7 @@ jobs:
 
       - name: Build Rust project
         run: |
-          cargo build --release --locked --target aarch64-apple-darwin --manifest-path app/Cargo.toml
+          cargo build --release --locked --target aarch64-apple-darwin
         env:
           PKG_CONFIG_ALLOW_CROSS: 1
           OPENSSL_DIR: ${{ env.OPENSSL_DIR }}
@@ -371,7 +371,7 @@ jobs:
         run: |
           mkdir -p ~/kompass-installer/usr/local/bin
           mkdir -p artifacts
-          cp app/target/aarch64-apple-darwin/release/kompass ~/kompass-installer/usr/local/bin/
+          cp  target/aarch64-apple-darwin/release/kompass ~/kompass-installer/usr/local/bin/
           pkgbuild --identifier com.mongonaut.kompass --version 0.1.0 --install-location / --root ~/kompass-installer artifacts/kompass.pkg
         env:
           BUNDLE_ID: com.mongonaut.kompass

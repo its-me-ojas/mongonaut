@@ -67,4 +67,4 @@ We’re currently working on:
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License. See the LICENSE file for more details.

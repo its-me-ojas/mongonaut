@@ -1,7 +1,25 @@
 [package]
-name = "mongonaut"
+name = "kompass"
 version = "0.1.0"
 edition = "2024"
+authors = [
+    "Ojas <crestfallenwizard@gmail.com>",
+    "Hushraj Singh <hushrajs@gmail.com>"
+]
+license = "MIT"
+description = "A Rust-based Command Line Interface (CLI) tool for effortlessly navigating, querying, and interacting with MongoDB databases."
+repository = "https://github.com/its-me-ojas/mongonaut"
+
+[package.metadata.deb]
+maintainer = "Ojas <crestfallenwizard@gmail.com>"
+copyright = "Copyright (c) 2025"
+license-file = "../LICENSE"
+depends = "$auto"
+section = "utils"
+priority = "optional"
+
+[package.metadata.wix]
+eula = "../LICENSE"
 
 [dependencies]
 arboard = "3.6.1"

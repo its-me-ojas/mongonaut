@@ -39,3 +39,27 @@ opt-level = 3
 strip = true
 lto = true
 codegen-units = 1
+
+[package.metadata.rpm]
+package = "kompass"
+assets = [
+    ["target/release/kompass", "/usr/bin/kompass", "755"],
+]
+
+
+[package.metadata.rpm.cargo]
+buildflags = ["--release"]
+assets = [
+    ["target/release/kompass", "/usr/bin/kompass", "755"],
+]
+
+[package.metadata.rpm.targets]
+kompass = { path = "/usr/bin/kompass" }
+assets = [
+    ["target/release/kompass", "/usr/bin/kompass", "755"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    ["target/release/kompass", "/usr/bin/kompass", "755"],
+]
